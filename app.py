@@ -5,12 +5,8 @@ import requests
 
 st.set_page_config(page_title="Student Counsellor Portal", layout="wide", page_icon="🎓")
 
-# Initialize the database tables if they don't exist
 db.init_db()
 
-# ==========================================
-# SESSION STATE MANAGEMENT
-# ==========================================
 if 'user' not in st.session_state:
     st.session_state.user = None
 
@@ -58,13 +54,12 @@ def get_user_info(code):
 # ==========================================
 def login_page():
     st.title("🎓 KITS Student Counsellor Portal")
-    st.write("Welcome. Please log in with your institutional Google account.")
+    st.write("Welcome. Please log in with your Google account.")
     st.markdown("---")
     
-    # Check if returning from Google with an auth code
     if "code" in st.query_params:
         code = st.query_params["code"]
-        st.query_params.clear() # Clean the URL so we don't re-run this loop
+        st.query_params.clear() 
         
         with st.spinner("Authenticating with Google..."):
             user_info = get_user_info(code)
@@ -72,7 +67,7 @@ def login_page():
             if "email" in user_info:
                 email = user_info["email"]
                 
-                # Check if this email is in the admin/counsellor list
+                # Check if this email is in the counsellor list
                 counsellor_emails = st.secrets.get("roles", {}).get("counsellors", [])
                 role = "Counsellor" if email in counsellor_emails else "Student"
                 
@@ -87,7 +82,6 @@ def login_page():
                 st.error("Authentication failed. Could not retrieve email.")
                 st.stop()
     
-    # Show Login Button if not processing an auth code
     login_url = get_login_url()
     st.markdown(
         f'Sign in with Google', 
