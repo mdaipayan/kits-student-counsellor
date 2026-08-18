@@ -83,10 +83,7 @@ def login_page():
                 st.stop()
     
     login_url = get_login_url()
-    st.markdown(
-        f'Sign in with Google', 
-        unsafe_allow_html=True
-    )
+    st.markdown(f'<a href="{login_url}" target="_self">Sign in with Google</a>', unsafe_allow_html=True)
 
 def logout():
     st.session_state.user = None
