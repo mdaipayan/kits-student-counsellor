@@ -2,6 +2,7 @@ import streamlit as st
 import database as db
 import base64
 import hashlib
+from datetime import date
 
 st.set_page_config(page_title="Student Counsellor Portal", layout="wide", page_icon="🎓")
 
@@ -11,13 +12,12 @@ if 'user' not in st.session_state:
     st.session_state.user = None
 
 # ==========================================
-# DEFAULT PASSWORDS (For First Time Login)
+# DEFAULT PASSWORDS
 # ==========================================
 STUDENT_PASSWORD = "student123"
 COUNSELLOR_PASSWORD = "faculty123"
 
 def hash_password(password):
-    """Encrypts the password so it isn't stored as plain text."""
     return hashlib.sha256(password.encode()).hexdigest()
 
 # ==========================================
@@ -30,7 +30,6 @@ def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.write("### Secure Login")
-        st.write("Please enter your credentials to access the portal.")
         
         with st.form("login_form"):
             name = st.text_input("Full Name (Only required for first login)")
@@ -48,7 +47,6 @@ def login_page():
                     user = db.get_user_by_email(email_clean)
                     
                     if not user:
-                        # 1. NEW USER: Check against the default password
                         if not name:
                             st.error("Full Name is required for your first login.")
                         elif role == "Student" and password == STUDENT_PASSWORD:
@@ -60,7 +58,6 @@ def login_page():
                         else:
                             st.error("Invalid credentials.")
                     else:
-                        # 2. RETURNING USER: Check if they still need to change their password
                         if user['password_changed'] == 0:
                             if (role == "Student" and password == STUDENT_PASSWORD) or \
                                (role == "Counsellor" and password == COUNSELLOR_PASSWORD):
@@ -69,8 +66,6 @@ def login_page():
                                 st.rerun()
                             else:
                                 st.error("Invalid credentials.")
-                        
-                        # 3. VERIFIED USER: Check against their custom hashed password
                         else:
                             if user['password_hash'] == hash_password(password) and user['role'] == role:
                                 db.update_last_login(user['id'])
@@ -96,7 +91,6 @@ def force_password_change():
                     st.error("Passwords do not match!")
                 else:
                     db.update_user_password(st.session_state.user['id'], hash_password(new_password))
-                    # Update the session state so they can proceed
                     st.session_state.user['password_changed'] = 1 
                     st.success("Password updated successfully!")
                     st.rerun()
@@ -134,35 +128,75 @@ def student_dashboard():
     is_disabled = status in ['Submitted', 'Verified']
     
     with st.form("student_profile_form"):
-        st.subheader("Personal & Academic Details")
-        st.write("**Profile Photo**")
+        # 1. PHOTO
+        st.subheader("1. Profile Photo")
         existing_photo = profile.get('photo')
-        
         if existing_photo:
-            st.image(base64.b64decode(existing_photo), width=150, caption="Current Photo")
+            st.image(base64.b64decode(existing_photo), width=120)
             
-        st.write("Update your photo using one of the methods below:")
-        photo_col1, photo_col2 = st.columns(2)
-        with photo_col1:
-            uploaded_file = st.file_uploader("1. Upload a file", type=['jpg', 'jpeg', 'png'], disabled=is_disabled)
-        with photo_col2:
-            camera_photo = st.camera_input("2. Or use your camera", disabled=is_disabled)
-            
+        p1, p2 = st.columns(2)
+        with p1: uploaded_file = st.file_uploader("Upload a file", type=['jpg', 'jpeg', 'png'], disabled=is_disabled)
+        with p2: camera_photo = st.camera_input("Or use camera", disabled=is_disabled)
         st.markdown("---")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            roll_no = st.text_input("Roll Number", value=profile.get('roll_no') or "", disabled=is_disabled)
-            branch = st.selectbox("Branch", ["CSE", "ECE", "MECH", "CIVIL", "IT"], 
-                                  index=["CSE", "ECE", "MECH", "CIVIL", "IT"].index(profile.get('branch')) if profile.get('branch') else 0,
-                                  disabled=is_disabled)
-            phone = st.text_input("Student Phone", value=profile.get('phone') or "", disabled=is_disabled)
-        with col2:
-            current_year = st.number_input("Current Year", min_value=1, max_value=4, value=profile.get('current_year') or 1, disabled=is_disabled)
-            current_semester = st.number_input("Current Semester", min_value=1, max_value=8, value=profile.get('current_semester') or 1, disabled=is_disabled)
-            parent_phone = st.text_input("Parent Phone", value=profile.get('parent_phone') or "", disabled=is_disabled)
+        # 2. PERSONAL DETAILS
+        st.subheader("2. Personal Details")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            gender = st.selectbox("Gender", ["Male", "Female", "Other"], index=["Male", "Female", "Other"].index(profile.get('gender')) if profile.get('gender') in ["Male", "Female", "Other"] else 0, disabled=is_disabled)
+            phone = st.text_input("Personal Phone", value=profile.get('phone') or "", disabled=is_disabled)
+        with c2:
+            try: def_dob = date.fromisoformat(profile.get('dob')) if profile.get('dob') else date(2005, 1, 1)
+            except: def_dob = date(2005, 1, 1)
+            dob = st.date_input("Date of Birth", value=def_dob, min_value=date(1990, 1, 1), max_value=date.today(), disabled=is_disabled)
             
-        parent_name = st.text_input("Parent Name", value=profile.get('parent_name') or "", disabled=is_disabled)
+        with c3:
+            blood_group = st.selectbox("Blood Group", ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"], index=["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"].index(profile.get('blood_group')) if profile.get('blood_group') else 8, disabled=is_disabled)
+        st.markdown("---")
+
+        # 3. ACADEMIC DETAILS
+        st.subheader("3. Academic Details")
+        a1, a2, a3, a4 = st.columns(4)
+        with a1: roll_no = st.text_input("Roll Number", value=profile.get('roll_no') or "", disabled=is_disabled)
+        with a2: branch = st.selectbox("Branch", ["CSE", "ECE", "MECH", "CIVIL", "IT"], index=["CSE", "ECE", "MECH", "CIVIL", "IT"].index(profile.get('branch')) if profile.get('branch') else 0, disabled=is_disabled)
+        with a3: current_year = st.number_input("Year", 1, 4, profile.get('current_year') or 1, disabled=is_disabled)
+        with a4: current_semester = st.number_input("Semester", 1, 8, profile.get('current_semester') or 1, disabled=is_disabled)
+        cgpa = st.number_input("Current CGPA", min_value=0.0, max_value=10.0, step=0.1, value=profile.get('cgpa') or 0.0, disabled=is_disabled)
+        st.markdown("---")
+
+        # 4. ADDRESS & LIVING ARRANGEMENTS
+        st.subheader("4. Address & Living Arrangements")
+        hostel_status = st.selectbox("Are you a Day Scholar or Hosteller?", ["Day Scholar", "Hosteller"], index=["Day Scholar", "Hosteller"].index(profile.get('hostel_status')) if profile.get('hostel_status') in ["Day Scholar", "Hosteller"] else 0, disabled=is_disabled)
+        
+        ad1, ad2 = st.columns(2)
+        with ad1:
+            address = st.text_area("Permanent Home Address", value=profile.get('address') or "", disabled=is_disabled)
+        with ad2:
+            local_address = st.text_area("Local Address (Fill only if Day Scholar & living away from home)", value=profile.get('local_address') or "", disabled=is_disabled)
+            
+        h1, h2 = st.columns(2)
+        with h1:
+            hostel_name = st.text_input("Hostel Name (Fill only if Hosteller)", value=profile.get('hostel_name') or "", disabled=is_disabled)
+        with h2:
+            room_number = st.text_input("Room Number (Fill only if Hosteller)", value=profile.get('room_number') or "", disabled=is_disabled)
+        st.markdown("---")
+
+        # 5. FAMILY & GUARDIAN DETAILS
+        st.subheader("5. Guardian Details")
+        f1, f2 = st.columns(2)
+        with f1:
+            parent_name = st.text_input("Parent/Permanent Guardian Name", value=profile.get('parent_name') or "", disabled=is_disabled)
+            parent_phone = st.text_input("Parent Phone Number", value=profile.get('parent_phone') or "", disabled=is_disabled)
+        with f2:
+            local_guardian_name = st.text_input("Local Guardian Name", value=profile.get('local_guardian_name') or "", disabled=is_disabled)
+            local_guardian_phone = st.text_input("Local Guardian Phone Number", value=profile.get('local_guardian_phone') or "", disabled=is_disabled)
+            local_guardian_relation = st.text_input("Relationship to Local Guardian", value=profile.get('local_guardian_relation') or "", disabled=is_disabled)
+        st.markdown("---")
+
+        # 6. HEALTH DETAILS
+        st.subheader("6. Health Details")
+        medical_history = st.text_area("Medical History / Allergies (Optional)", value=profile.get('medical_history') or "", disabled=is_disabled, help="Important for emergencies.")
+        st.markdown("---")
 
         if not is_disabled:
             col3, col4 = st.columns([1, 5])
@@ -173,23 +207,24 @@ def student_dashboard():
                 
             if save_draft or submit_review:
                 photo_data_to_save = existing_photo
-                if camera_photo:
-                    photo_data_to_save = base64.b64encode(camera_photo.getvalue()).decode('utf-8')
-                elif uploaded_file:
-                    photo_data_to_save = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+                if camera_photo: photo_data_to_save = base64.b64encode(camera_photo.getvalue()).decode('utf-8')
+                elif uploaded_file: photo_data_to_save = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
 
                 form_data = {
-                    "roll_no": roll_no, "branch": branch, "current_year": current_year,
-                    "current_semester": current_semester, "phone": phone,
-                    "parent_name": parent_name, "parent_phone": parent_phone,
-                    "photo": photo_data_to_save
+                    "roll_no": roll_no, "branch": branch, "current_year": current_year, "current_semester": current_semester,
+                    "cgpa": cgpa, "dob": str(dob), "gender": gender, "blood_group": blood_group, 
+                    "phone": phone, "parent_name": parent_name, "parent_phone": parent_phone, 
+                    "address": address, "hostel_status": hostel_status, "local_address": local_address, 
+                    "hostel_name": hostel_name, "room_number": room_number,
+                    "local_guardian_name": local_guardian_name, "local_guardian_phone": local_guardian_phone, "local_guardian_relation": local_guardian_relation,
+                    "medical_history": medical_history, "photo": photo_data_to_save
                 }
                 
                 db.save_student_draft(user['id'], form_data)
                 
                 if submit_review:
-                    if not roll_no or not phone:
-                        st.error("Roll Number and Phone are required to submit.")
+                    if not roll_no or not phone or not address:
+                        st.error("Roll Number, Phone, and Permanent Address are required to submit.")
                     else:
                         db.submit_student_profile(user['id'])
                         st.success("Submitted successfully!")
@@ -213,67 +248,118 @@ def counsellor_dashboard():
     c4.metric("Students At Risk", stats['at_risk'])
     
     st.markdown("---")
+    
+    # ----------------------------------------------------
+    # SECTION 1: PENDING SUBMISSIONS
+    # ----------------------------------------------------
     st.subheader("📋 Pending Submissions")
     pending_profiles = db.get_profiles_by_status('Submitted')
     
     if not pending_profiles:
-        st.success("No pending profiles to review! Great job.")
+        st.success("No pending profiles to review.")
     else:
         for p in pending_profiles:
             with st.expander(f"Review: {p['name']} ({p['roll_no']}) - {p['branch']} Year {p['current_year']}"):
-                img_col, info_col = st.columns([1, 4])
                 
-                with img_col:
-                    if p.get('photo'):
-                        st.image(base64.b64decode(p['photo']), use_container_width=True)
-                    else:
-                        st.info("No photo provided")
+                t1, t2, t3, t4 = st.tabs(["Personal & Health", "Logistics & Guardians", "Academic", "Action"])
+                
+                with t1:
+                    img_col, info_col = st.columns([1, 4])
+                    with img_col:
+                        if p.get('photo'): st.image(base64.b64decode(p['photo']), width=150)
+                        else: st.info("No photo")
+                    with info_col:
+                        st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']}")
+                        st.write(f"**DOB:** {p.get('dob')} | **Gender:** {p.get('gender')} | **Blood Group:** {p.get('blood_group')}")
+                        st.write(f"**Medical History:** {p.get('medical_history')}")
                         
-                with info_col:
-                    st.write(f"**Email:** {p['email']}")
-                    st.write(f"**Phone:** {p['phone']} | **Parent Phone:** {p['parent_phone']}")
+                with t2:
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write("**Permanent Details**")
+                        st.write(f"**Parent:** {p.get('parent_name')} ({p.get('parent_phone')})")
+                        st.write(f"**Address:** {p.get('address')}")
+                    with col_b:
+                        st.write("**Local/Hostel Details**")
+                        st.write(f"**Status:** {p.get('hostel_status')}")
+                        if p.get('hostel_status') == "Hosteller":
+                            st.write(f"**Hostel:** {p.get('hostel_name')} (Room {p.get('room_number')})")
+                        else:
+                            st.write(f"**Local Address:** {p.get('local_address')}")
+                        st.write(f"**Local Guardian:** {p.get('local_guardian_name')} ({p.get('local_guardian_relation')}) - {p.get('local_guardian_phone')}")
+
+                with t3:
+                    st.write(f"**Branch/Year:** {p.get('branch')} - Year {p.get('current_year')} (Sem {p.get('current_semester')})")
+                    st.write(f"**Current CGPA:** {p.get('cgpa')}")
                 
-                with st.form(f"review_form_{p['id']}"):
-                    feedback = st.text_area("Feedback/Notes (Required if rejecting)", value=p.get('counsellor_feedback') or "")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.form_submit_button("✅ Approve & Verify", type="primary"):
-                            db.review_student_profile(user['id'], p['id'], 'Verified', feedback)
-                            st.success("Profile Verified!")
-                            st.rerun()
-                    with col2:
-                        if st.form_submit_button("❌ Reject (Send back to Draft)"):
-                            if not feedback:
-                                st.error("Please provide feedback so the student knows what to fix.")
-                            else:
-                                db.review_student_profile(user['id'], p['id'], 'Rejected', feedback)
-                                st.success("Profile Rejected.")
+                with t4:
+                    with st.form(f"review_form_{p['id']}"):
+                        feedback = st.text_area("Feedback/Notes (Required if rejecting)", value=p.get('counsellor_feedback') or "")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.form_submit_button("✅ Approve & Verify", type="primary"):
+                                db.review_student_profile(user['id'], p['id'], 'Verified', feedback)
+                                st.success("Profile Verified!")
                                 st.rerun()
+                        with col2:
+                            if st.form_submit_button("❌ Reject (Send back to Draft)"):
+                                if not feedback: st.error("Feedback is required for rejection.")
+                                else:
+                                    db.review_student_profile(user['id'], p['id'], 'Rejected', feedback)
+                                    st.success("Profile Rejected.")
+                                    st.rerun()
 
     st.markdown("---")
-    st.subheader("✅ Verified Students (Manage Records)")
+    
+    # ----------------------------------------------------
+    # SECTION 2: MANAGE VERIFIED STUDENTS
+    # ----------------------------------------------------
+    st.subheader("✅ Verified Students")
     verified_profiles = db.get_profiles_by_status('Verified')
     
     if not verified_profiles:
         st.info("No students have been verified yet.")
     else:
         for p in verified_profiles:
-            with st.expander(f"Manage: {p['name']} ({p['roll_no']})"):
-                col_img, col_info, col_action = st.columns([1, 3, 1])
+            with st.expander(f"View Data: {p['name']} ({p['roll_no']}) - {p['branch']}"):
                 
-                with col_img:
-                    if p.get('photo'):
-                        st.image(base64.b64decode(p['photo']), use_container_width=True)
+                # Same Detailed Tabbed Layout for Verified Students
+                vt1, vt2, vt3, vt4 = st.tabs(["Personal & Health", "Logistics & Guardians", "Academic", "Actions"])
                 
-                with col_info:
-                    st.write(f"**Email:** {p['email']}")
-                    st.write(f"**Branch/Year:** {p['branch']} - Year {p['current_year']}")
-                    st.write(f"**Phone:** {p['phone']}")
-                    
-                with col_action:
-                    if st.button("🗑️ Delete Record", key=f"delete_btn_{p['id']}", type="secondary"):
+                with vt1:
+                    img_col, info_col = st.columns([1, 4])
+                    with img_col:
+                        if p.get('photo'): st.image(base64.b64decode(p['photo']), width=150)
+                        else: st.info("No photo")
+                    with info_col:
+                        st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']}")
+                        st.write(f"**DOB:** {p.get('dob')} | **Gender:** {p.get('gender')} | **Blood Group:** {p.get('blood_group')}")
+                        st.write(f"**Medical History:** {p.get('medical_history')}")
+                        
+                with vt2:
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write("**Permanent Details**")
+                        st.write(f"**Parent:** {p.get('parent_name')} ({p.get('parent_phone')})")
+                        st.write(f"**Address:** {p.get('address')}")
+                    with col_b:
+                        st.write("**Local/Hostel Details**")
+                        st.write(f"**Status:** {p.get('hostel_status')}")
+                        if p.get('hostel_status') == "Hosteller":
+                            st.write(f"**Hostel:** {p.get('hostel_name')} (Room {p.get('room_number')})")
+                        else:
+                            st.write(f"**Local Address:** {p.get('local_address')}")
+                        st.write(f"**Local Guardian:** {p.get('local_guardian_name')} ({p.get('local_guardian_relation')}) - {p.get('local_guardian_phone')}")
+
+                with vt3:
+                    st.write(f"**Branch/Year:** {p.get('branch')} - Year {p.get('current_year')} (Sem {p.get('current_semester')})")
+                    st.write(f"**Current CGPA:** {p.get('cgpa')}")
+                
+                with vt4:
+                    st.warning("⚠️ Deleting a student record will permanently erase their data and cannot be undone.")
+                    if st.button("🗑️ Delete Record", key=f"delete_btn_{p['id']}", type="primary"):
                         db.delete_student_record(user['id'], p['id'])
-                        st.warning(f"Deleted profile for {p['name']}")
+                        st.success(f"Deleted profile for {p['name']}")
                         st.rerun()
 
 # ==========================================
@@ -283,18 +369,15 @@ def main():
     if not st.session_state.user:
         login_page()
     elif st.session_state.user['password_changed'] == 0:
-        # Intercept the user and force them to change their password
         with st.sidebar:
-            if st.button("Logout"):
-                logout()
+            if st.button("Logout"): logout()
         force_password_change()
     else:
         with st.sidebar:
             st.write(f"👤 **{st.session_state.user['name']}**")
             st.write(f"📧 {st.session_state.user['email']}")
             st.write(f"🏷️ Role: {st.session_state.user['role']}")
-            if st.button("Logout"):
-                logout()
+            if st.button("Logout"): logout()
                 
         if st.session_state.user['role'] == 'Student':
             student_dashboard()
