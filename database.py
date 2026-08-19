@@ -38,6 +38,8 @@ def init_db():
         parent_name TEXT,
         parent_phone TEXT,
         
+        photo TEXT, -- NEW COLUMN ADDED HERE FOR CAMERA UPLOAD
+        
         -- Workflow & Verification
         status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft', 'Submitted', 'Verified', 'Rejected')),
         counsellor_feedback TEXT, 
@@ -150,13 +152,14 @@ def save_student_draft(user_id, profile_data):
     conn.execute("""
         UPDATE student_profiles 
         SET roll_no=?, branch=?, current_year=?, current_semester=?, 
-            phone=?, parent_name=?, parent_phone=?, updated_at=?
+            phone=?, parent_name=?, parent_phone=?, photo=?, updated_at=?
         WHERE user_id=?
     """, (
         profile_data.get('roll_no'), profile_data.get('branch'), 
         profile_data.get('current_year'), profile_data.get('current_semester'),
         profile_data.get('phone'), profile_data.get('parent_name'), 
-        profile_data.get('parent_phone'), datetime.now().isoformat(), user_id
+        profile_data.get('parent_phone'), profile_data.get('photo'), # Photo added here
+        datetime.now().isoformat(), user_id
     ))
     
     # Log the action
