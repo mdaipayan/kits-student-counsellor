@@ -221,3 +221,22 @@ def get_counsellor_dashboard_stats():
     
     conn.close()
     return stats
+    
+def delete_student_record(counsellor_id, profile_id):
+    """Deletes a student profile and their linked sessions."""
+    conn = connect()
+    
+    # 1. Delete child records first to satisfy Foreign Key constraints
+    conn.execute("DELETE FROM counselling_sessions WHERE student_profile_id=?", (profile_id,))
+    conn.execute("DELETE FROM academic_records WHERE student_profile_id=?", (profile_id,))
+    conn.execute("DELETE FROM attendance_records WHERE student_profile_id=?", (profile_id,))
+    
+    # 2. Delete the profile
+    conn.execute("DELETE FROM student_profiles WHERE id=?", (profile_id,))
+    
+    # 3. Log the deletion
+    conn.execute("INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)", 
+                 (counsellor_id, "DELETE_PROFILE", f"Counsellor deleted profile ID {profile_id}"))
+    
+    conn.commit()
+    conn.close()
