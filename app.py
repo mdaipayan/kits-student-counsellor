@@ -1,5 +1,6 @@
 import streamlit as st
 import database as db
+import base64
 
 st.set_page_config(page_title="Student Counsellor Portal", layout="wide", page_icon="🎓")
 
@@ -10,7 +11,6 @@ if 'user' not in st.session_state:
 
 # ==========================================
 # SIMPLE AUTHENTICATION PASSWORDS
-# Change these to your actual institution passwords!
 # ==========================================
 STUDENT_PASSWORD = "student123"
 COUNSELLOR_PASSWORD = "faculty123"
@@ -22,7 +22,6 @@ def login_page():
     st.title("🎓 KITS Student Counsellor Portal")
     st.markdown("---")
     
-    # Use columns to center the login form nicely
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -35,7 +34,6 @@ def login_page():
             role = st.selectbox("Role", ["Student", "Counsellor"])
             password = st.text_input("Password", type="password")
             
-            # use_container_width makes the button span the whole form width
             submit = st.form_submit_button("Log In", type="primary", use_container_width=True)
             
             if submit:
@@ -46,7 +44,6 @@ def login_page():
                 elif role == "Counsellor" and password != COUNSELLOR_PASSWORD:
                     st.error("Invalid credentials. Please try again.")
                 else:
-                    # Passwords match! Create or fetch their profile in the DB
                     st.session_state.user = db.get_or_create_user(
                         email=email.lower().strip(), 
                         name=name.strip(), 
@@ -82,6 +79,25 @@ def student_dashboard():
     
     with st.form("student_profile_form"):
         st.subheader("Personal & Academic Details")
+        
+        # --- PHOTO UPLOAD SECTION ---
+        st.write("**Profile Photo**")
+        existing_photo = profile.get('photo')
+        
+        # Display existing photo if they have one
+        if existing_photo:
+            st.image(base64.b64decode(existing_photo), width=150, caption="Current Photo")
+            
+        st.write("Update your photo using one of the methods below:")
+        photo_col1, photo_col2 = st.columns(2)
+        with photo_col1:
+            uploaded_file = st.file_uploader("1. Upload a file", type=['jpg', 'jpeg', 'png'], disabled=is_disabled)
+        with photo_col2:
+            camera_photo = st.camera_input("2. Or use your camera", disabled=is_disabled)
+            
+        st.markdown("---")
+        # -----------------------------
+        
         col1, col2 = st.columns(2)
         with col1:
             roll_no = st.text_input("Roll Number", value=profile.get('roll_no') or "", disabled=is_disabled)
@@ -104,12 +120,23 @@ def student_dashboard():
                 submit_review = st.form_submit_button("🚀 Submit for Review", type="primary")
                 
             if save_draft or submit_review:
+                # Determine which photo data to save (prioritize webcam, then upload, then existing)
+                photo_data_to_save = existing_photo
+                
+                if camera_photo:
+                    photo_data_to_save = base64.b64encode(camera_photo.getvalue()).decode('utf-8')
+                elif uploaded_file:
+                    photo_data_to_save = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+
                 form_data = {
                     "roll_no": roll_no, "branch": branch, "current_year": current_year,
                     "current_semester": current_semester, "phone": phone,
-                    "parent_name": parent_name, "parent_phone": parent_phone
+                    "parent_name": parent_name, "parent_phone": parent_phone,
+                    "photo": photo_data_to_save
                 }
+                
                 db.save_student_draft(user['id'], form_data)
+                
                 if submit_review:
                     if not roll_no or not phone:
                         st.error("Roll Number and Phone are required to submit.")
@@ -144,8 +171,20 @@ def counsellor_dashboard():
     else:
         for p in pending_profiles:
             with st.expander(f"Review: {p['name']} ({p['roll_no']}) - {p['branch']} Year {p['current_year']}"):
-                st.write(f"**Email:** {p['email']}")
-                st.write(f"**Phone:** {p['phone']} | **Parent Phone:** {p['parent_phone']}")
+                
+                # Use columns to put the photo next to the info
+                img_col, info_col = st.columns([1, 4])
+                
+                with img_col:
+                    if p.get('photo'):
+                        st.image(base64.b64decode(p['photo']), use_container_width=True)
+                    else:
+                        st.info("No photo provided")
+                        
+                with info_col:
+                    st.write(f"**Email:** {p['email']}")
+                    st.write(f"**Phone:** {p['phone']} | **Parent Phone:** {p['parent_phone']}")
+                
                 with st.form(f"review_form_{p['id']}"):
                     feedback = st.text_area("Feedback/Notes (Required if rejecting)", value=p.get('counsellor_feedback') or "")
                     col1, col2 = st.columns(2)
