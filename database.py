@@ -2,7 +2,8 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-DB_PATH = Path("kits_counsellor_prod.db")
+# Updated to v4 for the expanded address and guardian schema
+DB_PATH = Path("kits_counsellor_v4.db")
 
 def connect():
     conn = sqlite3.connect(DB_PATH)
@@ -13,37 +14,65 @@ def connect():
 def init_db():
     conn = connect()
     conn.executescript("""
-    -- 1. CENTRAL USERS TABLE (Now handles custom passwords)
+    -- 1. CENTRAL USERS TABLE
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'Student' CHECK(role IN ('Student', 'Counsellor', 'Admin')),
-        password_hash TEXT, -- Stores their encrypted personal password
-        password_changed INTEGER DEFAULT 0, -- 0 = Needs to change, 1 = Changed
+        password_hash TEXT, 
+        password_changed INTEGER DEFAULT 0, 
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         last_login TEXT
     );
 
-    -- 2. STUDENT PROFILES
+    -- 2. FULL STUDENT PROFILES (Expanded with Local Guardian & Hostel Info)
     CREATE TABLE IF NOT EXISTS student_profiles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER UNIQUE NOT NULL,
+        
+        -- Academic Info
         roll_no TEXT UNIQUE,
         branch TEXT,
         batch_year TEXT,
         current_year INTEGER CHECK(current_year BETWEEN 1 AND 4),
         current_semester INTEGER,
+        cgpa REAL,
+        
+        -- Personal Info
+        dob TEXT,
+        gender TEXT,
+        blood_group TEXT,
+        
+        -- Contact & Logistics
         phone TEXT,
         parent_name TEXT,
         parent_phone TEXT,
+        
+        -- Address & Living Data (NEW)
+        address TEXT, -- Permanent Home Address
+        hostel_status TEXT, -- 'Day Scholar' or 'Hosteller'
+        local_address TEXT, -- For Day Scholars
+        hostel_name TEXT, -- For Hostellers
+        room_number TEXT, -- For Hostellers
+        
+        -- Local Guardian Data (NEW)
+        local_guardian_name TEXT,
+        local_guardian_phone TEXT,
+        local_guardian_relation TEXT,
+        
+        -- Health
+        medical_history TEXT,
         photo TEXT, 
+        
+        -- Workflow & Status
         status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft', 'Submitted', 'Verified', 'Rejected')),
         counsellor_feedback TEXT, 
         assigned_counsellor_id INTEGER,
         risk_status TEXT NOT NULL DEFAULT 'Normal' CHECK(risk_status IN ('Normal', 'Watch', 'At Risk', 'Critical')),
         is_active INTEGER NOT NULL DEFAULT 1,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        
         FOREIGN KEY(user_id) REFERENCES users(id),
         FOREIGN KEY(assigned_counsellor_id) REFERENCES users(id)
     );
@@ -147,19 +176,24 @@ def get_student_profile(user_id):
     conn.close()
     return dict(profile) if profile else None
 
-def save_student_draft(user_id, profile_data):
+def save_student_draft(user_id, p_data):
     conn = connect()
     conn.execute("""
         UPDATE student_profiles 
-        SET roll_no=?, branch=?, current_year=?, current_semester=?, 
-            phone=?, parent_name=?, parent_phone=?, photo=?, updated_at=?
+        SET roll_no=?, branch=?, current_year=?, current_semester=?, cgpa=?,
+            dob=?, gender=?, blood_group=?, 
+            phone=?, parent_name=?, parent_phone=?, 
+            address=?, hostel_status=?, local_address=?, hostel_name=?, room_number=?,
+            local_guardian_name=?, local_guardian_phone=?, local_guardian_relation=?,
+            medical_history=?, photo=?, updated_at=?
         WHERE user_id=?
     """, (
-        profile_data.get('roll_no'), profile_data.get('branch'), 
-        profile_data.get('current_year'), profile_data.get('current_semester'),
-        profile_data.get('phone'), profile_data.get('parent_name'), 
-        profile_data.get('parent_phone'), profile_data.get('photo'),
-        datetime.now().isoformat(), user_id
+        p_data.get('roll_no'), p_data.get('branch'), p_data.get('current_year'), p_data.get('current_semester'), p_data.get('cgpa'),
+        p_data.get('dob'), p_data.get('gender'), p_data.get('blood_group'), 
+        p_data.get('phone'), p_data.get('parent_name'), p_data.get('parent_phone'), 
+        p_data.get('address'), p_data.get('hostel_status'), p_data.get('local_address'), p_data.get('hostel_name'), p_data.get('room_number'),
+        p_data.get('local_guardian_name'), p_data.get('local_guardian_phone'), p_data.get('local_guardian_relation'),
+        p_data.get('medical_history'), p_data.get('photo'), datetime.now().isoformat(), user_id
     ))
     conn.execute("INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)", 
                  (user_id, "SAVE_DRAFT", "Student saved profile draft"))
