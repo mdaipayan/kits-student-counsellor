@@ -1,6 +1,7 @@
 import streamlit as st
 import database as db
 import base64
+import hashlib
 
 st.set_page_config(page_title="Student Counsellor Portal", layout="wide", page_icon="🎓")
 
@@ -10,10 +11,14 @@ if 'user' not in st.session_state:
     st.session_state.user = None
 
 # ==========================================
-# SIMPLE AUTHENTICATION PASSWORDS
+# DEFAULT PASSWORDS (For First Time Login)
 # ==========================================
 STUDENT_PASSWORD = "student123"
 COUNSELLOR_PASSWORD = "faculty123"
+
+def hash_password(password):
+    """Encrypts the password so it isn't stored as plain text."""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 # ==========================================
 # AUTHENTICATION LOGIC
@@ -23,13 +28,12 @@ def login_page():
     st.markdown("---")
     
     col1, col2, col3 = st.columns([1, 2, 1])
-    
     with col2:
         st.write("### Secure Login")
         st.write("Please enter your credentials to access the portal.")
         
         with st.form("login_form"):
-            name = st.text_input("Full Name")
+            name = st.text_input("Full Name (Only required for first login)")
             email = st.text_input("Email Address (Used as your ID)")
             role = st.selectbox("Role", ["Student", "Counsellor"])
             password = st.text_input("Password", type="password")
@@ -37,19 +41,64 @@ def login_page():
             submit = st.form_submit_button("Log In", type="primary", use_container_width=True)
             
             if submit:
-                if not name or not email or not password:
-                    st.error("Please fill in all fields.")
-                elif role == "Student" and password != STUDENT_PASSWORD:
-                    st.error("Invalid credentials. Please try again.")
-                elif role == "Counsellor" and password != COUNSELLOR_PASSWORD:
-                    st.error("Invalid credentials. Please try again.")
+                if not email or not password:
+                    st.error("Please fill in Email and Password.")
                 else:
-                    st.session_state.user = db.get_or_create_user(
-                        email=email.lower().strip(), 
-                        name=name.strip(), 
-                        google_id=None,
-                        role=role
-                    )
+                    email_clean = email.lower().strip()
+                    user = db.get_user_by_email(email_clean)
+                    
+                    if not user:
+                        # 1. NEW USER: Check against the default password
+                        if not name:
+                            st.error("Full Name is required for your first login.")
+                        elif role == "Student" and password == STUDENT_PASSWORD:
+                            st.session_state.user = db.create_initial_user(email_clean, name.strip(), role)
+                            st.rerun()
+                        elif role == "Counsellor" and password == COUNSELLOR_PASSWORD:
+                            st.session_state.user = db.create_initial_user(email_clean, name.strip(), role)
+                            st.rerun()
+                        else:
+                            st.error("Invalid credentials.")
+                    else:
+                        # 2. RETURNING USER: Check if they still need to change their password
+                        if user['password_changed'] == 0:
+                            if (role == "Student" and password == STUDENT_PASSWORD) or \
+                               (role == "Counsellor" and password == COUNSELLOR_PASSWORD):
+                                db.update_last_login(user['id'])
+                                st.session_state.user = user
+                                st.rerun()
+                            else:
+                                st.error("Invalid credentials.")
+                        
+                        # 3. VERIFIED USER: Check against their custom hashed password
+                        else:
+                            if user['password_hash'] == hash_password(password) and user['role'] == role:
+                                db.update_last_login(user['id'])
+                                st.session_state.user = user
+                                st.rerun()
+                            else:
+                                st.error("Invalid credentials.")
+
+def force_password_change():
+    st.title("🔒 Set Your Personal Password")
+    st.warning("Because this is your first time logging in, you are required to set a personal, secure password.")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("change_password_form"):
+            new_password = st.text_input("New Password", type="password")
+            confirm_password = st.text_input("Confirm New Password", type="password")
+            
+            if st.form_submit_button("Update Password", type="primary", use_container_width=True):
+                if len(new_password) < 6:
+                    st.error("Password must be at least 6 characters long.")
+                elif new_password != confirm_password:
+                    st.error("Passwords do not match!")
+                else:
+                    db.update_user_password(st.session_state.user['id'], hash_password(new_password))
+                    # Update the session state so they can proceed
+                    st.session_state.user['password_changed'] = 1 
+                    st.success("Password updated successfully!")
                     st.rerun()
 
 def logout():
@@ -63,6 +112,13 @@ def student_dashboard():
     user = st.session_state.user
     profile = db.get_student_profile(user['id'])
     
+    if not profile:
+        conn = db.connect()
+        conn.execute("INSERT INTO student_profiles (user_id, status) VALUES (?, 'Draft')", (user['id'],))
+        conn.commit()
+        conn.close()
+        st.rerun()
+        
     st.title(f"Welcome, {user['name']}")
     
     status = profile['status']
@@ -79,12 +135,9 @@ def student_dashboard():
     
     with st.form("student_profile_form"):
         st.subheader("Personal & Academic Details")
-        
-        # --- PHOTO UPLOAD SECTION ---
         st.write("**Profile Photo**")
         existing_photo = profile.get('photo')
         
-        # Display existing photo if they have one
         if existing_photo:
             st.image(base64.b64decode(existing_photo), width=150, caption="Current Photo")
             
@@ -96,7 +149,6 @@ def student_dashboard():
             camera_photo = st.camera_input("2. Or use your camera", disabled=is_disabled)
             
         st.markdown("---")
-        # -----------------------------
         
         col1, col2 = st.columns(2)
         with col1:
@@ -120,9 +172,7 @@ def student_dashboard():
                 submit_review = st.form_submit_button("🚀 Submit for Review", type="primary")
                 
             if save_draft or submit_review:
-                # Determine which photo data to save (prioritize webcam, then upload, then existing)
                 photo_data_to_save = existing_photo
-                
                 if camera_photo:
                     photo_data_to_save = base64.b64encode(camera_photo.getvalue()).decode('utf-8')
                 elif uploaded_file:
@@ -171,8 +221,6 @@ def counsellor_dashboard():
     else:
         for p in pending_profiles:
             with st.expander(f"Review: {p['name']} ({p['roll_no']}) - {p['branch']} Year {p['current_year']}"):
-                
-                # Use columns to put the photo next to the info
                 img_col, info_col = st.columns([1, 4])
                 
                 with img_col:
@@ -202,12 +250,44 @@ def counsellor_dashboard():
                                 st.success("Profile Rejected.")
                                 st.rerun()
 
+    st.markdown("---")
+    st.subheader("✅ Verified Students (Manage Records)")
+    verified_profiles = db.get_profiles_by_status('Verified')
+    
+    if not verified_profiles:
+        st.info("No students have been verified yet.")
+    else:
+        for p in verified_profiles:
+            with st.expander(f"Manage: {p['name']} ({p['roll_no']})"):
+                col_img, col_info, col_action = st.columns([1, 3, 1])
+                
+                with col_img:
+                    if p.get('photo'):
+                        st.image(base64.b64decode(p['photo']), use_container_width=True)
+                
+                with col_info:
+                    st.write(f"**Email:** {p['email']}")
+                    st.write(f"**Branch/Year:** {p['branch']} - Year {p['current_year']}")
+                    st.write(f"**Phone:** {p['phone']}")
+                    
+                with col_action:
+                    if st.button("🗑️ Delete Record", key=f"delete_btn_{p['id']}", type="secondary"):
+                        db.delete_student_record(user['id'], p['id'])
+                        st.warning(f"Deleted profile for {p['name']}")
+                        st.rerun()
+
 # ==========================================
 # MAIN ROUTING LOGIC
 # ==========================================
 def main():
     if not st.session_state.user:
         login_page()
+    elif st.session_state.user['password_changed'] == 0:
+        # Intercept the user and force them to change their password
+        with st.sidebar:
+            if st.button("Logout"):
+                logout()
+        force_password_change()
     else:
         with st.sidebar:
             st.write(f"👤 **{st.session_state.user['name']}**")
