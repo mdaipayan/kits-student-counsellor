@@ -10,39 +10,41 @@ if 'user' not in st.session_state:
 
 # ==========================================
 # SIMPLE AUTHENTICATION PASSWORDS
-# Change these to whatever you want!
+# Change these to your actual institution passwords!
 # ==========================================
-STUDENT_PASSWORD = "1234"
-COUNSELLOR_PASSWORD = "19860113"
+STUDENT_PASSWORD = "student123"
+COUNSELLOR_PASSWORD = "faculty123"
 
 # ==========================================
 # AUTHENTICATION LOGIC
 # ==========================================
 def login_page():
     st.title("🎓 KITS Student Counsellor Portal")
-    st.write("Welcome. Please log in to continue.")
     st.markdown("---")
     
-    col1, col2 = st.columns([1, 2])
-    with col1:
+    # Use columns to center the login form nicely
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.write("### Secure Login")
+        st.write("Please enter your credentials to access the portal.")
+        
         with st.form("login_form"):
-            st.subheader("Login")
-            
-            # We still collect Name and Email so the database knows WHO is logging in
             name = st.text_input("Full Name")
             email = st.text_input("Email Address (Used as your ID)")
             role = st.selectbox("Role", ["Student", "Counsellor"])
             password = st.text_input("Password", type="password")
             
-            submit = st.form_submit_button("Log In", type="primary")
+            # use_container_width makes the button span the whole form width
+            submit = st.form_submit_button("Log In", type="primary", use_container_width=True)
             
             if submit:
                 if not name or not email or not password:
                     st.error("Please fill in all fields.")
                 elif role == "Student" and password != STUDENT_PASSWORD:
-                    st.error("Incorrect Student password.")
+                    st.error("Invalid credentials. Please try again.")
                 elif role == "Counsellor" and password != COUNSELLOR_PASSWORD:
-                    st.error("Incorrect Counsellor password.")
+                    st.error("Invalid credentials. Please try again.")
                 else:
                     # Passwords match! Create or fetch their profile in the DB
                     st.session_state.user = db.get_or_create_user(
@@ -52,9 +54,6 @@ def login_page():
                         role=role
                     )
                     st.rerun()
-                    
-    with col2:
-        st.info(f"**Demo Passwords:**\n* Student Password: `{STUDENT_PASSWORD}`\n* Counsellor Password: `{COUNSELLOR_PASSWORD}`")
 
 def logout():
     st.session_state.user = None
