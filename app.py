@@ -1,7 +1,5 @@
 import streamlit as st
 import database as db
-import urllib.parse
-import requests
 
 st.set_page_config(page_title="Student Counsellor Portal", layout="wide", page_icon="🎓")
 
@@ -11,79 +9,52 @@ if 'user' not in st.session_state:
     st.session_state.user = None
 
 # ==========================================
-# GOOGLE OAUTH CONFIG
+# SIMPLE AUTHENTICATION PASSWORDS
+# Change these to whatever you want!
 # ==========================================
-try:
-    CLIENT_ID = st.secrets["google"]["client_id"]
-    CLIENT_SECRET = st.secrets["google"]["client_secret"]
-    REDIRECT_URI = st.secrets["google"]["redirect_uri"]
-except FileNotFoundError:
-    st.error("Missing .streamlit/secrets.toml file. Please set up your Google credentials.")
-    st.stop()
-
-def get_login_url():
-    auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
-    params = {
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "offline",
-        "prompt": "consent",
-    }
-    return f"{auth_url}?{urllib.parse.urlencode(params)}"
-
-def get_user_info(code):
-    token_url = "https://oauth2.googleapis.com/token"
-    data = {
-        "code": code,
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code",
-    }
-    response = requests.post(token_url, data=data)
-    access_token = response.json().get("access_token")
-
-    user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    return requests.get(user_info_url, headers=headers).json()
+STUDENT_PASSWORD = "1234"
+COUNSELLOR_PASSWORD = "19860113"
 
 # ==========================================
 # AUTHENTICATION LOGIC
 # ==========================================
 def login_page():
     st.title("🎓 KITS Student Counsellor Portal")
-    st.write("Welcome. Please log in with your Google account.")
+    st.write("Welcome. Please log in to continue.")
     st.markdown("---")
     
-    if "code" in st.query_params:
-        code = st.query_params["code"]
-        st.query_params.clear() 
-        
-        with st.spinner("Authenticating with Google..."):
-            user_info = get_user_info(code)
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        with st.form("login_form"):
+            st.subheader("Login")
             
-            if "email" in user_info:
-                email = user_info["email"]
-                
-                # Check if this email is in the counsellor list
-                counsellor_emails = st.secrets.get("roles", {}).get("counsellors", [])
-                role = "Counsellor" if email in counsellor_emails else "Student"
-                
-                st.session_state.user = db.get_or_create_user(
-                    email=email, 
-                    name=user_info.get("name", email.split("@")[0]), 
-                    google_id=user_info.get("id"),
-                    role=role
-                )
-                st.rerun()
-            else:
-                st.error("Authentication failed. Could not retrieve email.")
-                st.stop()
-    
-    login_url = get_login_url()
-    st.markdown(f'<a href="{login_url}" target="_self">Sign in with Google</a>', unsafe_allow_html=True)
+            # We still collect Name and Email so the database knows WHO is logging in
+            name = st.text_input("Full Name")
+            email = st.text_input("Email Address (Used as your ID)")
+            role = st.selectbox("Role", ["Student", "Counsellor"])
+            password = st.text_input("Password", type="password")
+            
+            submit = st.form_submit_button("Log In", type="primary")
+            
+            if submit:
+                if not name or not email or not password:
+                    st.error("Please fill in all fields.")
+                elif role == "Student" and password != STUDENT_PASSWORD:
+                    st.error("Incorrect Student password.")
+                elif role == "Counsellor" and password != COUNSELLOR_PASSWORD:
+                    st.error("Incorrect Counsellor password.")
+                else:
+                    # Passwords match! Create or fetch their profile in the DB
+                    st.session_state.user = db.get_or_create_user(
+                        email=email.lower().strip(), 
+                        name=name.strip(), 
+                        google_id=None,
+                        role=role
+                    )
+                    st.rerun()
+                    
+    with col2:
+        st.info(f"**Demo Passwords:**\n* Student Password: `{STUDENT_PASSWORD}`\n* Counsellor Password: `{COUNSELLOR_PASSWORD}`")
 
 def logout():
     st.session_state.user = None
