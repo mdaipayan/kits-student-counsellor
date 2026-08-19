@@ -24,7 +24,7 @@ def hash_password(password):
 # AUTHENTICATION LOGIC
 # ==========================================
 def login_page():
-    st.title("🎓 KITS Student Counsellor Portal")
+    st.title("🎓 Student Counsellor Portal")
     st.markdown("---")
     
     col1, col2, col3 = st.columns([1, 2, 1])
