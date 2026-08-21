@@ -359,6 +359,36 @@ def counsellor_dashboard():
                         st.success(f"Deleted profile for {p['name']}")
                         st.rerun()
 
+    # ----------------------------------------------------
+    # SECTION 3: SEARCH & REMOVE ANY STUDENT
+    # ----------------------------------------------------
+    st.subheader("🔍 Search & Remove Any Student")
+    st.info("Use this to remove students who left the college, even if their profile is still in 'Draft' or 'Submitted' status.")
+    
+    all_students = db.get_all_students()
+    if not all_students:
+        st.write("No students registered yet.")
+    else:
+        # Format the options so the counsellor can easily search by Name, Roll No, or Email
+        student_options = {
+            f"{s['name']} - {s['roll_no'] or 'No Roll No'} ({s['email']}) [Status: {s['status']}]": s['user_id'] 
+            for s in all_students
+        }
+        
+        # The selectbox acts as a searchable dropdown in Streamlit
+        selected_student = st.selectbox("Search for a student to delete:", ["-- Select Student --"] + list(student_options.keys()))
+        
+        if selected_student != "-- Select Student --":
+            student_user_id = student_options[selected_student]
+            
+            st.warning(f"⚠️ You are about to permanently delete all data, photos, and logins for **{selected_student}**. This cannot be undone.")
+            
+            if st.button("🗑️ Permanently Delete Student Account", type="primary"):
+                db.delete_student_completely(user['id'], student_user_id)
+                st.success("Student completely removed from the system.")
+                st.rerun()
+
+
 # ==========================================
 # MAIN ROUTING LOGIC
 # ==========================================
