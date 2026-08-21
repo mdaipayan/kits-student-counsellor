@@ -4,7 +4,9 @@ import bcrypt
 import uuid
 import boto3
 import pandas as pd
+import io
 from datetime import date
+
 
 st.set_page_config(page_title="Student Counsellor Portal", layout="wide", page_icon="🎓")
 
@@ -340,6 +342,41 @@ def counsellor_dashboard():
                 db.delete_student_completely(user['id'], student_options[selected_student])
                 st.success("Student removed.")
                 st.rerun()
+
+    # ----------------------------------------------------
+    # SECTION 5: NAAC & NBA INSPECTION EXPORTS
+    # ----------------------------------------------------
+    st.markdown("---")
+    st.subheader("📊 NAAC / NBA Compliance Reports")
+    st.info("Download official, audit-ready summaries of all verified student files for accreditation committees.")
+    
+    col_pdf, col_excel = st.columns(2)
+    
+    with col_pdf:
+        pdf_bytes = db.generate_naac_pdf()
+        st.download_button(
+            label="📄 Download NAAC PDF Report",
+            data=pdf_bytes,
+            file_name=f"NAAC_Counselling_Report_{date.today()}.pdf",
+            mime="application/pdf",
+            help="Generates an official PDF table of all verified student records."
+        )
+        
+    with col_excel:
+        verified_data = db.get_naac_export_data()
+        if verified_data:
+            df_export = pd.DataFrame(verified_data)
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_export.to_excel(writer, index=False, sheet_name='Verified Students')
+            
+            st.download_button(
+                label="📊 Download Full Excel Data",
+                data=excel_buffer.getvalue(),
+                file_name=f"Student_Directory_{date.today()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Exports complete verified records into an editable Excel format."
+            )
 
 def main():
     if not st.session_state.user:
