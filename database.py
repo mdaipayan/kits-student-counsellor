@@ -248,3 +248,28 @@ def get_counsellor_dashboard_stats():
         "drafts_in_progress": drafts,
         "at_risk": at_risk
     }
+
+def get_all_students():
+    """Fetches every student in the database, regardless of their profile status."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.id as user_id, u.name, u.email, sp.roll_no, sp.branch, sp.current_year, sp.status
+        FROM users u
+        LEFT JOIN student_profiles sp ON u.id = sp.user_id
+        WHERE u.role = 'Student'
+        ORDER BY u.name ASC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+def delete_student_completely(counsellor_id, student_user_id):
+    """Wipes the user account. Postgres ON DELETE CASCADE will automatically erase their profile and sessions."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE id=%s", (student_user_id,))
+    cur.execute("INSERT INTO audit_logs (user_id, action, details) VALUES (%s, %s, %s)", 
+                 (counsellor_id, "DELETE_STUDENT", f"Deleted student user ID {student_user_id} completely"))
+    conn.commit()
+    conn.close()
