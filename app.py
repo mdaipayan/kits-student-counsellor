@@ -293,16 +293,32 @@ def counsellor_dashboard():
     
     # 3. BULK EXCEL IMPORT
     st.subheader("📥 Bulk Onboard Students via Excel")
-    uploaded_excel = st.file_uploader("Upload Student Registry (.xlsx)", type=['xlsx'])
+    st.info("Upload an Excel file to instantly create accounts for hundreds of students. Make sure your columns match the required template.")
+    
+    # ----------------------------------------------------
+    # NEW: Download Sample Template Button
+    # ----------------------------------------------------
+    template_bytes = db.generate_excel_template()
+    st.download_button(
+        label="📥 Download Sample Excel Template",
+        data=template_bytes,
+        file_name="student_import_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Download this template, fill in your students' details, and upload it below."
+    )
+    
+    st.markdown("---")
+    
+    uploaded_excel = st.file_uploader("Upload Filled Student Registry (.xlsx)", type=['xlsx'])
     if uploaded_excel:
         df = pd.read_excel(uploaded_excel)
+        st.write("Preview of data to be imported:")
         st.dataframe(df.head())
+        
         if st.button("🚀 Run Bulk Import", type="primary"):
             success, skipped = db.bulk_import_students(user['id'], df)
-            st.success(f"Imported {success} students. Skipped {skipped}.")
+            st.success(f"Successfully imported {success} students. Skipped {skipped}.")
             st.rerun()
-
-    st.markdown("---")
     
     # 4. SEARCH & REMOVE ANY STUDENT
     st.subheader("🔍 Search & Remove Any Student")
