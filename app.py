@@ -87,7 +87,7 @@ def login_page():
                             else:
                                 st.error("Invalid credentials.")
                         else:
-                            if user['password_hash'] == hash_password(password) and user['role'] == role:
+                            if verify_password(password, user['password_hash']) and user['role'] == role:
                                 db.update_last_login(user['id'])
                                 st.session_state.user = user
                                 st.rerun()
