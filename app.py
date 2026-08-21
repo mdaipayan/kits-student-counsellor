@@ -1,7 +1,9 @@
 import streamlit as st
 import database as db
-import base64
 import hashlib
+import uuid
+import boto3
+import pandas as pd
 from datetime import date
 
 st.set_page_config(page_title="Student Counsellor Portal", layout="wide", page_icon="🎓")
@@ -11,18 +13,28 @@ db.init_db()
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-# ==========================================
-# DEFAULT PASSWORDS
-# ==========================================
 STUDENT_PASSWORD = "student123"
 COUNSELLOR_PASSWORD = "faculty123"
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ==========================================
-# AUTHENTICATION LOGIC
-# ==========================================
+def upload_photo_to_r2(file_bytes, mime_type="image/jpeg"):
+    """Uploads photo to Cloudflare R2 and returns public URL."""
+    s3 = boto3.client('s3',
+        endpoint_url=st.secrets['r2']['endpoint'],
+        aws_access_key_id=st.secrets['r2']['access_key'],
+        aws_secret_access_key=st.secrets['r2']['secret_key']
+    )
+    file_name = f"profile_photos/{uuid.uuid4().hex}.jpg"
+    s3.put_object(
+        Bucket=st.secrets['r2']['bucket_name'], 
+        Key=file_name, 
+        Body=file_bytes, 
+        ContentType=mime_type
+    )
+    return f"{st.secrets['r2']['public_url']}/{file_name}"
+
 def login_page():
     st.title("🎓 Student Counsellor Portal")
     st.markdown("---")
@@ -30,8 +42,6 @@ def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.write("### Secure Login")
-        st.info("💡 **New Users:** Please contact **D. Mandal** for your initial password.")
-        
         with st.form("login_form"):
             name = st.text_input("Full Name (Only required for first login)")
             email = st.text_input("Email Address (Used as your ID)")
@@ -100,9 +110,6 @@ def logout():
     st.session_state.user = None
     st.rerun()
 
-# ==========================================
-# STUDENT DASHBOARD
-# ==========================================
 def student_dashboard():
     user = st.session_state.user
     profile = db.get_student_profile(user['id'])
@@ -126,18 +133,16 @@ def student_dashboard():
     is_disabled = status in ['Submitted', 'Verified']
     
     with st.form("student_profile_form"):
-        # 1. PHOTO
         st.subheader("1. Profile Photo")
         existing_photo = profile.get('photo')
         if existing_photo:
-            st.image(base64.b64decode(existing_photo), width=120)
+            st.image(existing_photo, width=120)
             
         p1, p2 = st.columns(2)
         with p1: uploaded_file = st.file_uploader("Upload a file", type=['jpg', 'jpeg', 'png'], disabled=is_disabled)
         with p2: camera_photo = st.camera_input("Or use camera", disabled=is_disabled)
         st.markdown("---")
         
-        # 2. PERSONAL DETAILS
         st.subheader("2. Personal Details")
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -147,12 +152,10 @@ def student_dashboard():
             try: def_dob = date.fromisoformat(profile.get('dob')) if profile.get('dob') else date(2005, 1, 1)
             except: def_dob = date(2005, 1, 1)
             dob = st.date_input("Date of Birth", value=def_dob, min_value=date(1990, 1, 1), max_value=date.today(), disabled=is_disabled)
-            
         with c3:
             blood_group = st.selectbox("Blood Group", ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"], index=["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"].index(profile.get('blood_group')) if profile.get('blood_group') else 8, disabled=is_disabled)
         st.markdown("---")
 
-        # 3. ACADEMIC DETAILS
         st.subheader("3. Academic Details")
         a1, a2, a3, a4 = st.columns(4)
         with a1: roll_no = st.text_input("Roll Number", value=profile.get('roll_no') or "", disabled=is_disabled)
@@ -162,24 +165,18 @@ def student_dashboard():
         cgpa = st.number_input("Current CGPA", min_value=0.0, max_value=10.0, step=0.1, value=profile.get('cgpa') or 0.0, disabled=is_disabled)
         st.markdown("---")
 
-        # 4. ADDRESS & LIVING ARRANGEMENTS
         st.subheader("4. Address & Living Arrangements")
         hostel_status = st.selectbox("Are you a Day Scholar or Hosteller?", ["Day Scholar", "Hosteller"], index=["Day Scholar", "Hosteller"].index(profile.get('hostel_status')) if profile.get('hostel_status') in ["Day Scholar", "Hosteller"] else 0, disabled=is_disabled)
         
         ad1, ad2 = st.columns(2)
-        with ad1:
-            address = st.text_area("Permanent Home Address", value=profile.get('address') or "", disabled=is_disabled)
-        with ad2:
-            local_address = st.text_area("Local Address (Fill only if Day Scholar & living away from home)", value=profile.get('local_address') or "", disabled=is_disabled)
+        with ad1: address = st.text_area("Permanent Home Address", value=profile.get('address') or "", disabled=is_disabled)
+        with ad2: local_address = st.text_area("Local Address (Fill only if Day Scholar)", value=profile.get('local_address') or "", disabled=is_disabled)
             
         h1, h2 = st.columns(2)
-        with h1:
-            hostel_name = st.text_input("Hostel Name (Fill only if Hosteller)", value=profile.get('hostel_name') or "", disabled=is_disabled)
-        with h2:
-            room_number = st.text_input("Room Number (Fill only if Hosteller)", value=profile.get('room_number') or "", disabled=is_disabled)
+        with h1: hostel_name = st.text_input("Hostel Name (Fill only if Hosteller)", value=profile.get('hostel_name') or "", disabled=is_disabled)
+        with h2: room_number = st.text_input("Room Number (Fill only if Hosteller)", value=profile.get('room_number') or "", disabled=is_disabled)
         st.markdown("---")
 
-        # 5. FAMILY & GUARDIAN DETAILS
         st.subheader("5. Guardian Details")
         f1, f2 = st.columns(2)
         with f1:
@@ -191,22 +188,23 @@ def student_dashboard():
             local_guardian_relation = st.text_input("Relationship to Local Guardian", value=profile.get('local_guardian_relation') or "", disabled=is_disabled)
         st.markdown("---")
 
-        # 6. HEALTH DETAILS
         st.subheader("6. Health Details")
-        medical_history = st.text_area("Medical History / Allergies (Optional)", value=profile.get('medical_history') or "", disabled=is_disabled, help="Important for emergencies.")
+        medical_history = st.text_area("Medical History / Allergies", value=profile.get('medical_history') or "", disabled=is_disabled)
         st.markdown("---")
 
         if not is_disabled:
             col3, col4 = st.columns([1, 5])
-            with col3:
-                save_draft = st.form_submit_button("💾 Save Draft")
-            with col4:
-                submit_review = st.form_submit_button("🚀 Submit for Review", type="primary")
+            with col3: save_draft = st.form_submit_button("💾 Save Draft")
+            with col4: submit_review = st.form_submit_button("🚀 Submit for Review", type="primary")
                 
             if save_draft or submit_review:
                 photo_data_to_save = existing_photo
-                if camera_photo: photo_data_to_save = base64.b64encode(camera_photo.getvalue()).decode('utf-8')
-                elif uploaded_file: photo_data_to_save = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+                if camera_photo:
+                    with st.spinner("Uploading photo to cloud..."):
+                        photo_data_to_save = upload_photo_to_r2(camera_photo.getvalue())
+                elif uploaded_file:
+                    with st.spinner("Uploading photo to cloud..."):
+                        photo_data_to_save = upload_photo_to_r2(uploaded_file.getvalue(), uploaded_file.type)
 
                 form_data = {
                     "roll_no": roll_no, "branch": branch, "current_year": current_year, "current_semester": current_semester,
@@ -231,9 +229,6 @@ def student_dashboard():
                     st.success("Draft saved!")
                     st.rerun()
 
-# ==========================================
-# COUNSELLOR DASHBOARD
-# ==========================================
 def counsellor_dashboard():
     user = st.session_state.user
     st.title("👨‍🏫 Counsellor Dashboard")
@@ -247,9 +242,7 @@ def counsellor_dashboard():
     
     st.markdown("---")
     
-    # ----------------------------------------------------
-    # SECTION 1: PENDING SUBMISSIONS
-    # ----------------------------------------------------
+    # 1. PENDING SUBMISSIONS
     st.subheader("📋 Pending Submissions")
     pending_profiles = db.get_profiles_by_status('Submitted')
     
@@ -258,141 +251,71 @@ def counsellor_dashboard():
     else:
         for p in pending_profiles:
             with st.expander(f"Review: {p['name']} ({p['roll_no']}) - {p['branch']} Year {p['current_year']}"):
-                
                 t1, t2, t3, t4 = st.tabs(["Personal & Health", "Logistics & Guardians", "Academic", "Action"])
-                
                 with t1:
-                    img_col, info_col = st.columns([1, 4])
-                    with img_col:
-                        if p.get('photo'): st.image(base64.b64decode(p['photo']), width=150)
-                        else: st.info("No photo")
-                    with info_col:
-                        st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']}")
-                        st.write(f"**DOB:** {p.get('dob')} | **Gender:** {p.get('gender')} | **Blood Group:** {p.get('blood_group')}")
-                        st.write(f"**Medical History:** {p.get('medical_history')}")
-                        
+                    if p.get('photo'): st.image(p['photo'], width=150)
+                    else: st.info("No photo")
+                    st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']}")
+                    st.write(f"**DOB:** {p.get('dob')} | **Gender:** {p.get('gender')} | **Blood Group:** {p.get('blood_group')}")
+                    st.write(f"**Medical History:** {p.get('medical_history')}")
                 with t2:
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.write("**Permanent Details**")
-                        st.write(f"**Parent:** {p.get('parent_name')} ({p.get('parent_phone')})")
-                        st.write(f"**Address:** {p.get('address')}")
-                    with col_b:
-                        st.write("**Local/Hostel Details**")
-                        st.write(f"**Status:** {p.get('hostel_status')}")
-                        if p.get('hostel_status') == "Hosteller":
-                            st.write(f"**Hostel:** {p.get('hostel_name')} (Room {p.get('room_number')})")
-                        else:
-                            st.write(f"**Local Address:** {p.get('local_address')}")
-                        st.write(f"**Local Guardian:** {p.get('local_guardian_name')} ({p.get('local_guardian_relation')}) - {p.get('local_guardian_phone')}")
-
+                    st.write(f"**Permanent Address:** {p.get('address')}")
+                    st.write(f"**Status:** {p.get('hostel_status')} | **Local Guardian:** {p.get('local_guardian_name')} ({p.get('local_guardian_phone')})")
                 with t3:
-                    st.write(f"**Branch/Year:** {p.get('branch')} - Year {p.get('current_year')} (Sem {p.get('current_semester')})")
-                    st.write(f"**Current CGPA:** {p.get('cgpa')}")
-                
+                    st.write(f"**Branch/Year:** {p.get('branch')} - Year {p.get('current_year')} (Sem {p.get('current_semester')}) | **CGPA:** {p.get('cgpa')}")
                 with t4:
                     with st.form(f"review_form_{p['id']}"):
-                        feedback = st.text_area("Feedback/Notes (Required if rejecting)", value=p.get('counsellor_feedback') or "")
-                        col1, col2 = st.columns(2)
-                        with col1:
+                        feedback = st.text_area("Feedback/Notes", value=p.get('counsellor_feedback') or "")
+                        c_a, c_b = st.columns(2)
+                        with c_a:
                             if st.form_submit_button("✅ Approve & Verify", type="primary"):
                                 db.review_student_profile(user['id'], p['id'], 'Verified', feedback)
-                                st.success("Profile Verified!")
                                 st.rerun()
-                        with col2:
-                            if st.form_submit_button("❌ Reject (Send back to Draft)"):
-                                if not feedback: st.error("Feedback is required for rejection.")
-                                else:
-                                    db.review_student_profile(user['id'], p['id'], 'Rejected', feedback)
-                                    st.success("Profile Rejected.")
-                                    st.rerun()
+                        with c_b:
+                            if st.form_submit_button("❌ Reject"):
+                                db.review_student_profile(user['id'], p['id'], 'Rejected', feedback)
+                                st.rerun()
 
     st.markdown("---")
     
-    # ----------------------------------------------------
-    # SECTION 2: MANAGE VERIFIED STUDENTS
-    # ----------------------------------------------------
+    # 2. VERIFIED STUDENTS
     st.subheader("✅ Verified Students")
     verified_profiles = db.get_profiles_by_status('Verified')
-    
     if not verified_profiles:
-        st.info("No students have been verified yet.")
+        st.info("No verified students yet.")
     else:
         for p in verified_profiles:
-            with st.expander(f"View Data: {p['name']} ({p['roll_no']}) - {p['branch']}"):
-                
-                # Same Detailed Tabbed Layout for Verified Students
-                vt1, vt2, vt3, vt4 = st.tabs(["Personal & Health", "Logistics & Guardians", "Academic", "Actions"])
-                
-                with vt1:
-                    img_col, info_col = st.columns([1, 4])
-                    with img_col:
-                        if p.get('photo'): st.image(base64.b64decode(p['photo']), width=150)
-                        else: st.info("No photo")
-                    with info_col:
-                        st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']}")
-                        st.write(f"**DOB:** {p.get('dob')} | **Gender:** {p.get('gender')} | **Blood Group:** {p.get('blood_group')}")
-                        st.write(f"**Medical History:** {p.get('medical_history')}")
-                        
-                with vt2:
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.write("**Permanent Details**")
-                        st.write(f"**Parent:** {p.get('parent_name')} ({p.get('parent_phone')})")
-                        st.write(f"**Address:** {p.get('address')}")
-                    with col_b:
-                        st.write("**Local/Hostel Details**")
-                        st.write(f"**Status:** {p.get('hostel_status')}")
-                        if p.get('hostel_status') == "Hosteller":
-                            st.write(f"**Hostel:** {p.get('hostel_name')} (Room {p.get('room_number')})")
-                        else:
-                            st.write(f"**Local Address:** {p.get('local_address')}")
-                        st.write(f"**Local Guardian:** {p.get('local_guardian_name')} ({p.get('local_guardian_relation')}) - {p.get('local_guardian_phone')}")
+            with st.expander(f"View: {p['name']} ({p['roll_no']})"):
+                if p.get('photo'): st.image(p['photo'], width=120)
+                st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']} | **Branch:** {p['branch']}")
 
-                with vt3:
-                    st.write(f"**Branch/Year:** {p.get('branch')} - Year {p.get('current_year')} (Sem {p.get('current_semester')})")
-                    st.write(f"**Current CGPA:** {p.get('cgpa')}")
-                
-                with vt4:
-                    st.warning("⚠️ Deleting a student record will permanently erase their data and cannot be undone.")
-                    if st.button("🗑️ Delete Record", key=f"delete_btn_{p['id']}", type="primary"):
-                        db.delete_student_record(user['id'], p['id'])
-                        st.success(f"Deleted profile for {p['name']}")
-                        st.rerun()
-
-    # ----------------------------------------------------
-    # SECTION 3: SEARCH & REMOVE ANY STUDENT
-    # ----------------------------------------------------
-    st.subheader("🔍 Search & Remove Any Student")
-    st.info("Use this to remove students who left the college, even if their profile is still in 'Draft' or 'Submitted' status.")
+    st.markdown("---")
     
+    # 3. BULK EXCEL IMPORT
+    st.subheader("📥 Bulk Onboard Students via Excel")
+    uploaded_excel = st.file_uploader("Upload Student Registry (.xlsx)", type=['xlsx'])
+    if uploaded_excel:
+        df = pd.read_excel(uploaded_excel)
+        st.dataframe(df.head())
+        if st.button("🚀 Run Bulk Import", type="primary"):
+            success, skipped = db.bulk_import_students(user['id'], df)
+            st.success(f"Imported {success} students. Skipped {skipped}.")
+            st.rerun()
+
+    st.markdown("---")
+    
+    # 4. SEARCH & REMOVE ANY STUDENT
+    st.subheader("🔍 Search & Remove Any Student")
     all_students = db.get_all_students()
-    if not all_students:
-        st.write("No students registered yet.")
-    else:
-        # Format the options so the counsellor can easily search by Name, Roll No, or Email
-        student_options = {
-            f"{s['name']} - {s['roll_no'] or 'No Roll No'} ({s['email']}) [Status: {s['status']}]": s['user_id'] 
-            for s in all_students
-        }
-        
-        # The selectbox acts as a searchable dropdown in Streamlit
-        selected_student = st.selectbox("Search for a student to delete:", ["-- Select Student --"] + list(student_options.keys()))
-        
-        if selected_student != "-- Select Student --":
-            student_user_id = student_options[selected_student]
-            
-            st.warning(f"⚠️ You are about to permanently delete all data, photos, and logins for **{selected_student}**. This cannot be undone.")
-            
+    if all_students:
+        student_options = {f"{s['name']} - {s['roll_no'] or 'No Roll'} ({s['email']})": s['user_id'] for s in all_students}
+        selected_student = st.selectbox("Select student to delete:", ["-- Select --"] + list(student_options.keys()))
+        if selected_student != "-- Select --":
             if st.button("🗑️ Permanently Delete Student Account", type="primary"):
-                db.delete_student_completely(user['id'], student_user_id)
-                st.success("Student completely removed from the system.")
+                db.delete_student_completely(user['id'], student_options[selected_student])
+                st.success("Student removed.")
                 st.rerun()
 
-
-# ==========================================
-# MAIN ROUTING LOGIC
-# ==========================================
 def main():
     if not st.session_state.user:
         login_page()
@@ -406,7 +329,7 @@ def main():
             st.write(f"📧 {st.session_state.user['email']}")
             st.write(f"🏷️ Role: {st.session_state.user['role']}")
             if st.button("Logout"): logout()
-                
+        
         if st.session_state.user['role'] == 'Student':
             student_dashboard()
         elif st.session_state.user['role'] == 'Counsellor':
