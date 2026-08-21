@@ -2,6 +2,8 @@ import psycopg2
 import psycopg2.extras
 import streamlit as st
 from datetime import datetime
+import pandas as pd
+import io
 
 def connect():
     return psycopg2.connect(
@@ -306,3 +308,20 @@ def get_counsellor_dashboard_stats():
         "drafts_in_progress": drafts,
         "at_risk": at_risk
     }
+
+
+def generate_excel_template():
+    """Generates an in-memory sample Excel file for bulk student import."""
+    sample_data = {
+        "Name": ["Aarav Sharma", "Priya Patel"],
+        "Email": ["aarav.sharma@kits.edu", "priya.patel@kits.edu"],
+        "Roll No": ["26CSE001", "26CSE002"],
+        "Branch": ["CSE", "ECE"],
+        "Year": [1, 2]
+    }
+    df = pd.DataFrame(sample_data)
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Students')
+    return output.getvalue()
