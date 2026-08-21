@@ -411,3 +411,33 @@ def generate_naac_pdf():
     buffer.seek(0)
     return buffer.getvalue()
 
+
+def add_counsellor_session(student_profile_id, counsellor_id, reason, discussion, followup_date):
+    """Logs a new mentoring session for a specific student."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO counselling_sessions 
+        (student_profile_id, counsellor_id, session_date, reason, discussion, followup_date, status)
+        VALUES (%s, %s, %s, %s, %s, %s, 'Open')
+    """, (student_profile_id, counsellor_id, datetime.now().strftime('%Y-%m-%d'), reason, discussion, followup_date))
+    
+    cur.execute("INSERT INTO audit_logs (user_id, action, details) VALUES (%s, %s, %s)", 
+                 (counsellor_id, "ADD_SESSION", f"Added counselling session for student profile ID {student_profile_id}"))
+    conn.commit()
+    conn.close()
+
+def get_student_counselling_history(student_profile_id):
+    """Fetches all past counselling logs for a specific student."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT cs.*, u.name as counsellor_name 
+        FROM counselling_sessions cs
+        JOIN users u ON cs.counsellor_id = u.id
+        WHERE cs.student_profile_id = %s
+        ORDER BY cs.session_date DESC
+    """, (student_profile_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
