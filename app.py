@@ -1,6 +1,6 @@
 import streamlit as st
 import database as db
-import hashlib
+import bcrypt
 import uuid
 import boto3
 import pandas as pd
@@ -16,8 +16,17 @@ if 'user' not in st.session_state:
 STUDENT_PASSWORD = "student123"
 COUNSELLOR_PASSWORD = "faculty123"
 
+# --- NEW BCRYPT SECURITY FUNCTIONS ---
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hashes a password using a secure bcrypt salt."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def verify_password(plain_password, hashed_password):
+    """Verifies a plain password against the stored bcrypt hash."""
+    if not hashed_password:
+        return False
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 def upload_photo_to_r2(file_bytes, mime_type="image/jpeg"):
     """Uploads photo to Cloudflare R2 and returns public URL."""
