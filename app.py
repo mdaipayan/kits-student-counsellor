@@ -107,10 +107,7 @@ def student_dashboard():
     profile = db.get_student_profile(user['id'])
     
     if not profile:
-        conn = db.connect()
-        conn.execute("INSERT INTO student_profiles (user_id, status) VALUES (?, 'Draft')", (user['id'],))
-        conn.commit()
-        conn.close()
+        db.create_blank_profile(user['id'])
         st.rerun()
         
     st.title(f"Welcome, {user['name']}")
