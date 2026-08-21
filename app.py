@@ -290,17 +290,55 @@ def counsellor_dashboard():
     st.markdown("---")
     
     # 2. VERIFIED STUDENTS
-    st.subheader("✅ Verified Students")
+    st.subheader("✅ Verified Students & Counselling Records")
     verified_profiles = db.get_profiles_by_status('Verified')
     if not verified_profiles:
         st.info("No verified students yet.")
     else:
         for p in verified_profiles:
-            with st.expander(f"View: {p['name']} ({p['roll_no']})"):
-                if p.get('photo'): st.image(p['photo'], width=120)
-                st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']} | **Branch:** {p['branch']}")
-
-    st.markdown("---")
+            with st.expander(f"View: {p['name']} ({p['roll_no']}) - {p['branch']}"):
+                tab_info, tab_sessions = st.tabs(["👤 Profile & Details", "📝 Counselling Session Tracker"])
+                
+                with tab_info:
+                    c_img, c_details = st.columns([1, 3])
+                    with c_img:
+                        if p.get('photo'): st.image(p['photo'], width=120)
+                        else: st.info("No photo")
+                    with c_details:
+                        st.write(f"**Email:** {p['email']} | **Phone:** {p['phone']}")
+                        st.write(f"**Year/Sem:** Year {p['current_year']} (Sem {p['current_semester']}) | **CGPA:** {p['cgpa']}")
+                        st.write(f"**Permanent Address:** {p.get('address')}")
+                        st.write(f"**Medical History:** {p.get('medical_history') or 'None reported'}")
+                
+                with tab_sessions:
+                    st.write("#### Past Counselling Logs")
+                    sessions = db.get_student_counselling_history(p['id'])
+                    
+                    if not sessions:
+                        st.info("No counselling sessions recorded yet.")
+                    else:
+                        for s in sessions:
+                            with st.container():
+                                st.markdown(f"**📅 Date:** {s['session_date']} | **Counsellor:** {s['counsellor_name']}")
+                                st.write(f"*Reason / Focus:* {s['reason']}")
+                                st.write(f"*Discussion Notes:* {s['discussion']}")
+                                if s['followup_date']:
+                                    st.caption(f"⏰ Follow-up Scheduled: {s['followup_date']}")
+                                st.markdown("---")
+                                
+                    with st.form(f"session_form_{p['id']}"):
+                        st.write("#### Add New Session Note")
+                        reason = st.text_input("Meeting Reason / Objective (e.g., Attendance, Career Guidance)")
+                        discussion = st.text_area("Discussion Points & Faculty Advice")
+                        followup_date = st.date_input("Next Follow-up Date (Optional)", value=None)
+                        
+                        if st.form_submit_button("💾 Save Counselling Note", type="primary"):
+                            if not reason or not discussion:
+                                st.error("Please provide both a meeting reason and discussion notes.")
+                            else:
+                                db.add_counsellor_session(p['id'], user['id'], reason, discussion, str(followup_date) if followup_date else "")
+                                st.success("Counselling session logged successfully!")
+                                st.rerun()
     
     # 3. BULK EXCEL IMPORT
     st.subheader("📥 Bulk Onboard Students via Excel")
