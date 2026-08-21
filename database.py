@@ -4,6 +4,10 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 def connect():
     return psycopg2.connect(
@@ -325,3 +329,85 @@ def generate_excel_template():
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Students')
     return output.getvalue()
+
+#-----------------------------------------------------------------------------------#
+#  Functions to fetch all verified data and format it into downloadable formats
+#_____________________________________________________________________________________
+
+def get_naac_export_data():
+    """Fetches all verified students and their core details for inspection reports."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.name, u.email, sp.roll_no, sp.branch, sp.current_year, 
+               sp.current_semester, sp.cgpa, sp.phone, sp.hostel_status, sp.risk_status
+        FROM users u
+        JOIN student_profiles sp ON u.id = sp.user_id
+        WHERE sp.status = 'Verified'
+        ORDER BY sp.branch ASC, sp.roll_no ASC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+def generate_naac_pdf():
+    """Generates a professional compliance-ready PDF report of verified students."""
+    data = get_naac_export_data()
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elements = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor=colors.HexColor("#1f2937"),
+        spaceAfter=6
+    )
+    subtitle_style = ParagraphStyle(
+        'SubtitleStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor("#4b5563"),
+        spaceAfter=15
+    )
+    
+    elements.append(Paragraph("<b>NAAC Criteria 2: Student Mentoring & Compliance Report</b>", title_style))
+    elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%d-%b-%Y')} | Total Verified Mentees: {len(data)}", subtitle_style))
+    elements.append(Spacer(1, 10))
+    
+    # Table Data Structure
+    table_data = [["Roll No", "Student Name", "Branch", "Year", "Sem", "CGPA", "Phone", "Risk"]]
+    
+    for row in data:
+        table_data.append([
+            str(row.get('roll_no', '')),
+            str(row.get('name', '')),
+            str(row.get('branch', '')),
+            str(row.get('current_year', '')),
+            str(row.get('current_semester', '')),
+            str(row.get('cgpa', '')),
+            str(row.get('phone', '')),
+            str(row.get('risk_status', ''))
+        ])
+        
+    t = Table(table_data, colWidths=[75, 120, 55, 35, 35, 45, 80, 60])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3b82f6")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#f9fafb")),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+    ]))
+    
+    elements.append(t)
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
