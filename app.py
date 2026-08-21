@@ -30,6 +30,7 @@ def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.write("### Secure Login")
+        st.info("💡 **New Users:** Please contact **D. Mandal** for your initial password.")
         
         with st.form("login_form"):
             name = st.text_input("Full Name (Only required for first login)")
